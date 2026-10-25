@@ -66,7 +66,7 @@ type jwtPart interface {
 func encodePart[J jwtPart] (part J) (string, error) {
 	enc, err := json.Marshal(part)
 	if err != nil {
-		return "", nil
+		return "", err
 	}
 
 	return base64.RawURLEncoding.EncodeToString(enc), nil
@@ -121,7 +121,7 @@ func (s *ServiceAccount) createJws(header string, claim string) (string, error) 
 
 	signature, err := rsa.SignPKCS1v15(nil, privateKey, crypto.SHA256, hashed[:])
 	if err != nil {
-		return "", nil
+		return "", err
 	}
 
 	return base64.RawURLEncoding.EncodeToString(signature), nil
