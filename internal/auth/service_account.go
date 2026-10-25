@@ -4,9 +4,14 @@ import (
 	"encoding/json"
 	"encoding/base64"
 	"encoding/pem"
+	"crypto"
+	"crypto/x509"
+	"crypto/rsa"
+	"crypto/sha256"
 	"sync"
 	"time"
 	"fmt"
+	"errors"
 )
 
 const Scope = "https://www.googleapis.com/auth/adwords"
@@ -64,7 +69,7 @@ func encodePart[J jwtPart] (part J) (string, error) {
 		return "", nil
 	}
 
-	return base64.RawURLEncoding.EncodeToString(enc)
+	return base64.RawURLEncoding.EncodeToString(enc), nil
 }
 
 func (s *ServiceAccount) buildJwt() (string, error) {
@@ -83,11 +88,43 @@ func (s *ServiceAccount) buildJwt() (string, error) {
 		Iat : now,
 		Sub : s.Sub,
 	}
+
+	encHeader, err := encodePart(header)
+	encClaim, err := encodePart(claim)
+
+	if err != nil {
+		return "", nil
+	}
+
+	sig, err := s.createJws(encHeader, encClaim)
+
+	if err != nil {
+		return sig, err
+	}
+
+	return fmt.Sprintf("%s.%s.%s", encHeader, encClaim, sig), nil
 }
 
 func (s *ServiceAccount) createJws(header string, claim string) (string, error) {
-	input := fmt.Sprintf("%s.%s", header, claim)
-	block, _ := pem.Decode(s.PrivateKey)
+	block, _ := pem.Decode([]byte(s.PrivateKey))
+	if block == nil || block.Type != "PRIVATE KEY" {
+		return "", errors.New("failed to decode PEM block containing private key")
+	}
 
-	return "hello", nil
+	privateKey, err := x509.ParsePKCS1PrivateKey(block.Bytes)
+	if err != nil {
+		return "", err
+	}
+
+	input := fmt.Sprintf("%s.%s", header, claim)
+	hashed := sha256.Sum256([]byte(input))
+
+	signature, err := rsa.SignPKCS1v15(nil, privateKey, crypto.SHA256, hashed[:])
+	if err != nil {
+		return "", nil
+	}
+
+	return base64.RawURLEncoding.EncodeToString(signature), nil
 }
+
+
